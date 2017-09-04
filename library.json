@@ -1,0 +1,25 @@
+{
+    "name": "OpenTherm",
+    "description": "Arduino library for OpenTherm comunication",
+    "keywords": "opentherm",
+    "authors": [
+        {
+            "name": "David Sulaiman",
+            "email": "sulaiman@itpe.cz",
+            "maintainer": true
+        },
+        {
+            "name": "Ihor Melnyk",
+            "url": "http://ihormelnyk.com/page/arduino_opentherm_controller",
+        }
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/sulicz/Arduino-OpenTherm"
+    },
+    "version": "1.0.0",
+    "frameworks": "Arduino",
+    "examples": [
+        "examples/*/*.ino"
+    ]
+}
