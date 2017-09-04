@@ -3,6 +3,7 @@
 This project is based on http://ihormelnyk.com/page/arduino_opentherm_controller. I made some little upgrades and created library.
 
 Interface of library is:
+
   // setup pins
   void setupOT();
  
