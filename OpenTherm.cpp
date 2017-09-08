@@ -58,10 +58,11 @@ bool OpenTherm::waitForResponse() {
   unsigned long time_stamp = micros();
   while (digitalRead(_pin_in) != HIGH) { //start bit
     if (micros() - time_stamp >= 1000000) {
-      Serial.println("Response timeout");
+      _ot_err = OT_RESPONSE_TIMOUT;
       return false;
     }
   }
+  _ot_err = OT_OK;
   delayMicroseconds(OT_BIT_PERIOD * 1.25); //wait for first bit
   return true;
 }
@@ -72,8 +73,37 @@ uint32_t OpenTherm::readResponse() {
     response = (response << 1) | digitalRead(_pin_in);
     delayMicroseconds(OT_BIT_PERIOD);
   }
+  // test parity
+  if (!testParity(response)) {
+    _ot_err = OT_PARITY_ERROR;
+    return 0;
+  }
+  
+  _ot_err = OT_OK;
   
   return response;
+}
+
+// vraci true pokud je parita OK
+boolean OpenTherm::testParity(uint32_t response) {
+  uint8_t parity = 0;
+  uint32_t bit;
+  
+  for (bit=0; bit < 32; bit++) {
+    parity ^= (response & ( ((uint32_t) 1) <<bit)) ? 1 : 0;
+  }
+  
+  Serial.println("parita");
+  Serial.println(parity);
+  
+  if (parity == 0)   // = parita je v poradku
+    return true;
+  else
+    return false;
+}
+
+uint8_t OpenTherm::getError() {
+  return _ot_err;
 }
 
 void OpenTherm::printBinary(uint32_t val) {
@@ -128,6 +158,19 @@ uint32_t OpenTherm::makeOTDataBlock(uint8_t msgType, uint8_t dataID, uint16_t da
    
   return result;
 }
+
+uint8_t OpenTherm::parseOTDataBlockMsgType(uint32_t response){
+  return ( (B0111) & (response >> 28));
+}
+
+uint8_t OpenTherm::parseOTDataBlockDataID(uint32_t response){
+  return ( (0xFF) & (response >> 16));
+}
+
+uint16_t OpenTherm::parseOTDataBlockDataValue(uint32_t response){
+  return ( (0xFFFF) & (response));
+}
+
 
 // convet float to  OpenTherm format 16bit
 // 1 sing bit; 7bit int; 8bitu faction bits = 16bit integer 1/256 unit  

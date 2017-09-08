@@ -11,6 +11,10 @@
 #define OT_MSG_TYPE_SM_INVALID    B110
 #define OT_MSG_TYPE_SM_UNK_DATAID B111
 
+#define OT_OK                     0
+#define OT_RESPONSE_TIMOUT        1
+#define OT_PARITY_ERROR           2
+
 // Opentherm bit period
 #if !defined OT_BIT_PERIOD
   #define OT_BIT_PERIOD 1000 //1020 //microseconds, 1ms -10%+15%
@@ -24,6 +28,7 @@ class OpenTherm {
   private:
     uint8_t _pin_in;
     uint8_t _pin_out;
+    uint8_t _ot_err = OT_OK;
     
     void setIdleState();
     void setActiveState();
@@ -31,7 +36,9 @@ class OpenTherm {
     void sendFrame(uint32_t request);
     bool waitForResponse();
     uint32_t readResponse();
-  
+
+    boolean testParity(uint32_t response);
+
   public:
     OpenTherm(uint8_t pin_in, uint8_t pin_out );
         
@@ -43,6 +50,8 @@ class OpenTherm {
     // send request and read response    
     uint32_t sendRequest(uint32_t request);
     
+    uint8_t getError();
+
     // print formated - DEBUG on Serial
     void printRequest(uint32_t request);
     void printResponse(uint32_t request);
@@ -50,11 +59,18 @@ class OpenTherm {
     
     // create Opentherm datagram from msgType, dataID and dataValue
     uint32_t makeOTDataBlock(uint8_t msgType, uint8_t dataID, uint16_t dataValue);
+
+    // parse Opentherm datagram from msgType, dataID and dataValue
+    uint8_t parseOTDataBlockMsgType(uint32_t response);
+    uint8_t parseOTDataBlockDataID(uint32_t response);
+    uint16_t parseOTDataBlockDataValue(uint32_t response);
     
     // convert float number to Opentherm coding
-   int16_t floatToOT16 (float in);
+    int16_t floatToOT16 (float in);
     // convert Opentherm coding to float number 
     float OT16ToFloat (int16_t in);
+    
+
 };
 
 #endif
