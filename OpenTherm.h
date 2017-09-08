@@ -14,6 +14,7 @@
 #define OT_OK                     0
 #define OT_RESPONSE_TIMOUT        1
 #define OT_PARITY_ERROR           2
+#define OT_BAD_RESPONSE           3
 
 // Opentherm bit period
 #if !defined OT_BIT_PERIOD
