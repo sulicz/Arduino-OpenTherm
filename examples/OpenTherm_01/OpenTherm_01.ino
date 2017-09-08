@@ -27,8 +27,8 @@ void setup() {
 
 void loop() {
   for (int index = 0; index < (sizeof(requests) / sizeof(unsigned long)); index++) {
-    sendRequestPrint(requests[index]);
-    readResponsePrint(sendRequest(requests[index]));
+    OT.printRequest(requests[index]);
+    OT.printResponse(OT.sendRequest(requests[index]));
     delay(950);
   }
 }
