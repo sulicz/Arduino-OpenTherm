@@ -93,9 +93,6 @@ boolean OpenTherm::testParity(uint32_t response) {
     parity ^= (response & ( ((uint32_t) 1) <<bit)) ? 1 : 0;
   }
   
-  Serial.println("parita");
-  Serial.println(parity);
-  
   if (parity == 0)   // = parita je v poradku
     return true;
   else
