@@ -1,188 +1,212 @@
-
-
-//P MGS-TYPE SPARE DATA-ID  DATA-VALUE
-//0 000      0000  00000000 00000000 00000000
-
 #include "OpenTherm.h"
 
 OpenTherm::OpenTherm(uint8_t pin_in, uint8_t pin_out ){
-  _pin_in = pin_in;
-  _pin_out = pin_out;
+  _ot_core =  new OpenThermCore(pin_in, pin_out);
 }
 
-void OpenTherm::setupOT(){
-  pinMode(_pin_in, INPUT);
-  pinMode(_pin_out, OUTPUT);
-}
+void OpenTherm::activateOT(){
+  _ot_core->setupOT();
+  _ot_core->activateOT();
 
-void OpenTherm::activateOT() {
-  setIdleState();
-  delay(1000);
-}
-
-void OpenTherm::setIdleState() {
-  digitalWrite(_pin_out, HIGH);
-}
-
-void OpenTherm::setActiveState() {
-  digitalWrite(_pin_out, LOW);
-}
-
-
-void OpenTherm::sendBit(bool high) {
-  if (high) setActiveState(); else setIdleState();
-  delayMicroseconds(500);
-  if (high) setIdleState(); else setActiveState();
-  delayMicroseconds(500);
-}
-
-void OpenTherm::sendFrame(uint32_t request) {
-  sendBit(HIGH); //start bit
-  for (int i = 31; i >= 0; i--) {
-    sendBit(bitRead(request, i));
-  }
-  sendBit(HIGH); //stop bit  
-  setIdleState();
-}
-
-uint32_t OpenTherm::sendRequest(uint32_t request) {
-  sendFrame(request);
-
-  if (!waitForResponse()) return 0;
-
-  return readResponse();
-}
-
-
-bool OpenTherm::waitForResponse() {
-  unsigned long time_stamp = micros();
-  while (digitalRead(_pin_in) != HIGH) { //start bit
-    if (micros() - time_stamp >= 1000000) {
-      _ot_err = OT_RESPONSE_TIMOUT;
-      return false;
-    }
-  }
-  _ot_err = OT_OK;
-  delayMicroseconds(OT_BIT_PERIOD * 1.25); //wait for first bit
-  return true;
-}
-
-uint32_t OpenTherm::readResponse() {
-  unsigned long response = 0;
-  for (int i = 0; i < 32; i++) {
-    response = (response << 1) | digitalRead(_pin_in);
-    delayMicroseconds(OT_BIT_PERIOD);
-  }
-  // test parity
-  if (!testParity(response)) {
-    _ot_err = OT_PARITY_ERROR;
-    return 0;
-  }
-  
-  _ot_err = OT_OK;
-  
-  return response;
-}
-
-// vraci true pokud je parita OK
-boolean OpenTherm::testParity(uint32_t response) {
-  uint8_t parity = 0;
-  uint32_t bit;
-  
-  for (bit=0; bit < 32; bit++) {
-    parity ^= (response & ( ((uint32_t) 1) <<bit)) ? 1 : 0;
-  }
-  
-  if (parity == 0)   // = parita je v poradku
-    return true;
-  else
-    return false;
 }
 
 uint8_t OpenTherm::getError() {
   return _ot_err;
 }
 
-void OpenTherm::printBinary(uint32_t val) {
-  for (int i = 31; i >= 0; i--) {
-    Serial.print(bitRead(val, i));
+bool OpenTherm::processErrors(int32_t  response, int expectResponse){
+  if( _ot_err != OT_OK) {
+    return false;
+  } 
+  if (_ot_core->parseOTDataBlockMsgType(response) != expectResponse ) {
+     _ot_err = OT_BAD_RESPONSE;
+     return false;
   }
-}
-
-void OpenTherm::printRequest(uint32_t request) {
-  Serial.println();
-  Serial.print("Request:  ");
-  printBinary(request);
-  Serial.print(" / "); 
-  Serial.print(request, HEX);
-  Serial.println();
-}
-
-void OpenTherm::printResponse(uint32_t response) {
-  Serial.print("Response: ");
-  printBinary(response);
-  Serial.print(" / ");
-  Serial.print(response, HEX);
-  Serial.println();
-
-  if ((response >> 16 & 0xFF) == 25) {
-    Serial.print("t=");
-    Serial.print(response >> 8 & 0xFF);
-    Serial.println("");
-  }
+  return true;
 }
 
 
-//P MGS-TYPE SPARE DATA-ID  DATA-VALUE
-//0 000      0000  00000000 00000000 00000000
-uint32_t OpenTherm::makeOTDataBlock(uint8_t msgType, uint8_t dataID, uint16_t dataValue){
-  
-  uint8_t parity = 0;
-  uint32_t bit;
-  uint32_t result = 0;
-  
-  result = result | ( ((uint32_t) msgType)  << 28);
-  result = result | ( ((uint32_t) dataID)  << 16);
-  result = result | ( ((uint32_t) dataValue) );
+bool OpenTherm::isStatus(uint16_t mask){
 
-  parity=0;
-  
-  for (bit=0; bit < 31; bit++) {
-    parity ^= (result & ( ((uint32_t) 1) <<bit)) ? 1 : 0;
-  }
-  
-  result = result | ( ((uint32_t) parity ) << 31 );
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 0, _get_stat_req ); //0 get status
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
    
-  return result;
-}
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
 
-uint8_t OpenTherm::parseOTDataBlockMsgType(uint32_t response){
-  return ( (B0111) & (response >> 28));
-}
-
-uint8_t OpenTherm::parseOTDataBlockDataID(uint32_t response){
-  return ( (0xFF) & (response >> 16));
-}
-
-uint16_t OpenTherm::parseOTDataBlockDataValue(uint32_t response){
-  return ( (0xFFFF) & (response));
-}
-
-
-// convet float to  OpenTherm format 16bit
-// 1 sing bit; 7bit int; 8bitu faction bits = 16bit integer 1/256 unit  
-int16_t OpenTherm::floatToOT16 (float in) {
-  int16_t ret = (in * 256.0) ;  
-
-  return ret;
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  if ( (result_data & mask ) == 0)
+    return false;
+  else
+    return true;
 }
 
 
-// convet  OpenTherm format 16bit to float
-// 1 sing bit; 7bit int; 8bitu faction bits = 16bit integer 1/256 unit  
-float OpenTherm::OT16ToFloat (int16_t in) {
-  float ret = (in / 256.0) ;  
-
-  return ret;
+bool OpenTherm::isFault(){
+  return isStatus(0x0001);
 }
+
+bool OpenTherm::isCHActive(){
+  return isStatus(0x0002);
+}
+
+bool OpenTherm::isDHWActive(){
+  return isStatus(0x0004);
+}
+
+bool OpenTherm::isFlameActive(){
+  return isStatus(0x0008);
+}
+
+
+int OpenTherm::setTemperatureHeating(float temp){
+  if (temp >= 20) {
+    _get_stat_req = OT_CH_AND_DHW;
+  } else {
+    _get_stat_req = OT_ONLY_DHW;
+  }
+  
+  isFault(); // propíšme nastavení get_status
+  delay(200);
+  uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_WRITE, 1, _ot_core->floatToOT16(temp) ); //1 set temp
+  uint32_t  response  = _ot_core->sendRequest(request);
+  _ot_err = _ot_core->getError();
+  
+  
+  if(processErrors(response, OT_MSG_TYPE_SM_WRITE_ACK) == false) {
+    return false;
+  }
+  delay(200);
+  isFault(); // propíšme nastavení get_status
+
+  
+  return _ot_err;
+}
+
+int OpenTherm::setDHWSetPoint(float temp){
+ 
+  isFault(); // probudíme komunikaci
+  delay(200);
+  
+  uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_WRITE, 56, _ot_core->floatToOT16(temp) ); //1 set temp
+  uint32_t  response  = _ot_core->sendRequest(request);
+  _ot_err = _ot_core->getError();
+  
+  if(processErrors(response, OT_MSG_TYPE_SM_WRITE_ACK) == false) {
+    return false;
+  } 
+  
+  return _ot_err;
+}
+
+float OpenTherm::getDHWFlowRate(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 19, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  return _ot_core->OT16ToFloat(result_data);
+}
+
+    
+float OpenTherm::getBoilerWaterTemp(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 25, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  return _ot_core->OT16ToFloat(result_data);
+}
+
+    
+float OpenTherm::getDHWtemperature(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 26, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  return _ot_core->OT16ToFloat(result_data);
+}
+
+int16_t OpenTherm::getExhaustTemp(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 33, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  return (int16_t)result_data;
+}
+
+
+
+uint16_t OpenTherm::getBurnerStarts(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 116, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  return _ot_core->parseOTDataBlockDataValue(response);
+} 
+
+
+uint16_t OpenTherm::getBurnerOpHours(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 120, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  return _ot_core->parseOTDataBlockDataValue(response);  
+}
+
+float OpenTherm::getDHWSetPoint(){
+
+   uint32_t  request = _ot_core->makeOTDataBlock(OT_MSG_TYPE_MS_READ, 56, 0x00 );
+   uint32_t  response  = _ot_core->sendRequest(request);
+   _ot_err = _ot_core->getError();
+   
+  if(processErrors(response, OT_MSG_TYPE_SM_READ_ACK) == false) {
+    return false;
+  } 
+  
+  uint16_t result_data = _ot_core->parseOTDataBlockDataValue(response);
+  
+  return _ot_core->OT16ToFloat(result_data);
+}
+
 

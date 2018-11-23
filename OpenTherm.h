@@ -1,77 +1,48 @@
 #ifndef __OPENTHERM_H_
 #define __OPENTHERM_H_
 
+#include "OpenThermCore.h"
 
-// Messgae type definition
-#define OT_MSG_TYPE_MS_READ       B000
-#define OT_MSG_TYPE_MS_WRITE      B001
-#define OT_MSG_TYPE_MS_INVALID    B010
-#define OT_MSG_TYPE_SM_READ_ACK   B100
-#define OT_MSG_TYPE_SM_WRITE_ACK  B101
-#define OT_MSG_TYPE_SM_INVALID    B110
-#define OT_MSG_TYPE_SM_UNK_DATAID B111
-
-#define OT_OK                     0
-#define OT_RESPONSE_TIMOUT        1
-#define OT_PARITY_ERROR           2
-#define OT_BAD_RESPONSE           3
-
-// Opentherm bit period
-#if !defined OT_BIT_PERIOD
-  #define OT_BIT_PERIOD 1000 //1020 //microseconds, 1ms -10%+15%
-#endif
-
-#include "Arduino.h"
-
+#define OT_ONLY_DHW   0x0200
+#define OT_CH_AND_DHW 0x0300
 
 class OpenTherm {
 
   private:
-    uint8_t _pin_in;
-    uint8_t _pin_out;
+    OpenThermCore *_ot_core;
     uint8_t _ot_err = OT_OK;
+    uint16_t _get_stat_req = OT_ONLY_DHW;
     
-    void setIdleState();
-    void setActiveState();
-    void sendBit(bool high);
-    void sendFrame(uint32_t request);
-    bool waitForResponse();
-    uint32_t readResponse();
-
-    boolean testParity(uint32_t response);
-
+    bool isStatus(uint16_t mask);
+    bool processErrors(int32_t  response, int expectResponse);
+    
   public:
     OpenTherm(uint8_t pin_in, uint8_t pin_out );
-        
-    // setup pins
-    void setupOT();
     
     void activateOT();
     
-    // send request and read response    
-    uint32_t sendRequest(uint32_t request);
-    
     uint8_t getError();
 
-    // print formated - DEBUG on Serial
-    void printRequest(uint32_t request);
-    void printResponse(uint32_t request);
-    void printBinary(uint32_t val);
     
-    // create Opentherm datagram from msgType, dataID and dataValue
-    uint32_t makeOTDataBlock(uint8_t msgType, uint8_t dataID, uint16_t dataValue);
-
-    // parse Opentherm datagram from msgType, dataID and dataValue
-    uint8_t parseOTDataBlockMsgType(uint32_t response);
-    uint8_t parseOTDataBlockDataID(uint32_t response);
-    uint16_t parseOTDataBlockDataValue(uint32_t response);
+    bool isFault(); // je kotel v chybovém stavu
+    bool isCHActive(); // central heating
+    bool isDHWActive(); // domestic how water
+    bool isFlameActive(); // hoří hořák
     
-    // convert float number to Opentherm coding
-    int16_t floatToOT16 (float in);
-    // convert Opentherm coding to float number 
-    float OT16ToFloat (int16_t in);
+    // nastavi teplotu, vraci err code
+    int setTemperatureHeating(float temp);
     
-
+    float getDHWFlowRate();
+    float getBoilerWaterTemp(); // výstupní voda z kotle
+    float getDHWtemperature();
+    
+    int16_t getExhaustTemp();
+    uint16_t getBurnerStarts();
+    uint16_t getBurnerOpHours();
+    
+    float getDHWSetPoint();
+    int setDHWSetPoint(float temp); // vrati err
 };
 
 #endif
+
